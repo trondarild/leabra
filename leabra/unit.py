@@ -153,7 +153,7 @@ class UnitSpec:
         self.e_rev_i    = 0.25    # inhibitory
         # activation function parameters
         self.act_thr    = 0.5     # threshold 2021-12-05 TAT: modulate via dopa D1 D2, adeno A1 A2
-        self.c_act_thr = self.act_thr # let original vary, this be constant
+        self.c_act_thr = 0 # let original vary, this be constant; logistic(0) = 0.5
         self.act_gain   = 100     # gain
         self.noisy_act  = True    # If True, uses the noisy activation function
         self.act_sd     = 0.01    # standard deviation of the noisy gaussian #FIXME: variance or sd?
