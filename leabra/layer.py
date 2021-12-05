@@ -13,6 +13,8 @@ class Layer:
                     the layer. If None, default values will be used.
         unit_spec:  UnitSpec instance with custom values for the parameters of
                     the units of the layer. If None, default values will be used.
+
+        2021-12-05 TAT: this is like a "population" or "ensemble" of neurons
         """
         self.genre = genre  # type of layer
 

@@ -71,7 +71,9 @@ class Unit:
 
     def cycle(self, phase, g_i=0.0, dt_integ=1):
         """Cycle the unit"""
-        return self.spec.cycle(self, phase, g_i=g_i, dt_integ=dt_integ)
+        #return self.spec.cycle(self, phase, g_i=g_i, dt_integ=dt_integ)
+        # 2021-12-05 change to use dopa, adeno
+        return self.spec.cycle_da(self, phase, g_i=g_i, dt_integ=dt_integ)
 
     def calculate_net_in(self):
         return self.spec.calculate_net_in(self)
@@ -150,7 +152,8 @@ class UnitSpec:
         self.e_rev_l    = 0.3     # leak
         self.e_rev_i    = 0.25    # inhibitory
         # activation function parameters
-        self.act_thr    = 0.5     # threshold
+        self.act_thr    = 0.5     # threshold 2021-12-05 TAT: modulate via dopa D1 D2, adeno A1 A2
+        self.c_act_thr = self.act_thr # let original vary, this be constant
         self.act_gain   = 100     # gain
         self.noisy_act  = True    # If True, uses the noisy activation function
         self.act_sd     = 0.01    # standard deviation of the noisy gaussian #FIXME: variance or sd?
@@ -181,6 +184,11 @@ class UnitSpec:
         self.avg_m_in_s = 0.1
         self.avg_lrn_min = 0.0001 # minimum avg_l_lrn value.
         self.avg_lrn_max = 0.5    # maximum avg_l_lrn value
+        # dopa and adenosine
+        self.r_d1 = 0.0
+        self.r_d2 = 0.0
+        self.r_a1 = 0.0
+        self.r_a2 = 0.0
 
         for key, value in kwargs.items():
             assert hasattr(self, key), 'the {} parameter does not exist'.format(key)
@@ -207,12 +215,12 @@ class UnitSpec:
         return copy.deepcopy(self)
 
     def xx1(self, v_m):
-        """Compute the x/(x+1) function."""
+        """Compute the x/(x+1) activation function."""
         X = self.act_gain * max(v_m, 0.0)
         return X / (X + 1)
 
     def noisy_xx1(self, v_m):
-        """Compute the noisy x/(x+1) function.
+        """Compute the noisy x/(x+1) activation function.
 
         The noisy x/(x+1) function is the convolution of the x/(x+1) function
         with a Gaussian with a `self.spec.act_sd` standard deviation. Here, we
@@ -295,7 +303,7 @@ class UnitSpec:
 
 
     def cycle(self, unit, phase, g_i=0.0, dt_integ=1):
-        """Update activity
+        """Update activity - "tick" or "step"
 
         unit    :  the unit to cycle
         g_i     :  inhibitory input
@@ -315,15 +323,18 @@ class UnitSpec:
         unit.v_m_eq += dt_integ * self.dt_v_m * unit.I_net_r
         #unit.v_m     = max(self.v_m_min, min(unit.v_m, self.v_m_max))
 
+        # modulate act_thr
+        
+
         # reseting v_m if over the threshold (spike-like behavior)
-        if unit.v_m > self.act_thr:
+        if unit.v_m > self.act_thr: # 2021-12-05 TAT may use Dopa and Adeno to modulate act_thr!
             unit.spike = 1
             unit.v_m   = self.v_m_r
             unit.I_net = 0.0
         else:
             unit.spike = 0
 
-        # selecting the activation function, noisy or not.
+        # selecting the activation function, noisy or not. (note: could also use sigmoid here)
         act_fun = self.noisy_xx1 if self.noisy_act else self.xx1
 
         # computing new_act, from v_m_eq (because rate-coded neuron)
@@ -336,6 +347,78 @@ class UnitSpec:
             gc_l = self.g_bar_l * self.g_l
             g_e_thr = (  gc_i * (self.e_rev_i - self.act_thr)
                        + gc_l * (self.e_rev_l - self.act_thr)
+                       - unit.adapt) / (self.act_thr - self.e_rev_e)
+
+            new_act = act_fun(gc_e - g_e_thr)  # gc_e == unit.net
+            #print('ABVTHR {} net={} {}\n       new_act={}'.format(unit.v_m_eq, gc_e, g_e_thr, new_act))
+
+
+        # updating activity
+        unit.act_nd += dt_integ * self.dt_v_m * (new_act - unit.act_nd)
+        #print('FASTCYV act={}'.format(unit.act_nd))
+
+        #unit.act_nd = max(self.act_min, min(unit.act_nd, self.act_max))
+        unit.act = unit.act_nd # FIXME: implement stp
+
+        # updating adaptation
+        if self.adapt_on:
+            unit.adapt += dt_integ * (
+                            self.dt_adapt * (self.v_m_gain * (unit.v_m - self.e_rev_l) - unit.adapt)
+                            + unit.spike * self.spike_gain
+                          )
+
+        # if phase == 'minus':
+        self.update_avgs(unit, dt_integ)
+        unit.update_logs()
+
+    def cycle_da(self, unit, phase, g_i=0.0, dt_integ=1):
+        """Update activity - "tick" or "step"
+
+        2021-12-05: TAT updated with dopa, adeno support    
+
+        unit    :  the unit to cycle
+        g_i     :  inhibitory input
+        dt_integ:  integration time step, in ms.
+        """
+        if unit.act_ext is not None: # forced activity
+            self.update_avgs(unit, dt_integ)
+            unit.update_logs()
+            return # see self.force_activity
+
+        # computing I_net and I_net_r
+        unit.I_net   = self.integrate_I_net(unit, g_i, dt_integ, ratecoded=False, steps=2) # half-step integration
+        unit.I_net_r = self.integrate_I_net(unit, g_i, dt_integ, ratecoded=True,  steps=1) # one-step integration
+
+        # updating v_m and v_m_eq
+        unit.v_m    += dt_integ * self.dt_v_m * unit.I_net   # - unit.adapt is done on the I_net value.
+        unit.v_m_eq += dt_integ * self.dt_v_m * unit.I_net_r
+        #unit.v_m     = max(self.v_m_min, min(unit.v_m, self.v_m_max))
+
+        # 2021-12-05 TAT: modulate act_thr
+        unit.act_thr = self.logistic(self.c_act_thr - unit.r_d1 + unit.r_a1 + unit.r_d2 - unit.r_a2)
+        
+
+        # reseting v_m if over the threshold (spike-like behavior)
+        if unit.v_m > unit.act_thr: # 2021-12-05 TAT may use Dopa and Adeno to modulate act_thr!
+            unit.spike = 1
+            unit.v_m   = self.v_m_r
+            unit.I_net = 0.0
+        else:
+            unit.spike = 0
+
+        # selecting the activation function, noisy or not. (note: could also use sigmoid here)
+        act_fun = self.noisy_xx1 if self.noisy_act else self.xx1
+
+        # computing new_act, from v_m_eq (because rate-coded neuron)
+        if unit.v_m_eq <= unit.act_thr:
+            new_act = act_fun(unit.v_m_eq - unit.act_thr)
+            #print('SUBTHR {} {}\n       new_act={}'.format(unit.v_m_eq, self.act_thr, new_act))
+        else:
+            gc_e = self.g_bar_e * unit.g_e
+            gc_i = self.g_bar_i * g_i
+            gc_l = self.g_bar_l * self.g_l
+            g_e_thr = (  gc_i * (self.e_rev_i - unit.act_thr)
+                       + gc_l * (self.e_rev_l - unit.act_thr)
                        - unit.adapt) / (self.act_thr - self.e_rev_e)
 
             new_act = act_fun(gc_e - g_e_thr)  # gc_e == unit.net
@@ -404,3 +487,39 @@ class UnitSpec:
         # else:
         #     unit.avg_l += self.avg_l_dt * (self.avg_l_min - unit.avg_l)
         # unit.avg_l = 3
+
+    def set_D1(self, ratio):
+        """Set the percentage of D1 activation that modulates 
+            activation threshold.
+
+            2021-12-05: this could also be set by calculation from
+            a density, given some affinity
+        """
+        self.r_d1 = ratio
+    def set_D2(self, ratio):
+        """Set the percentage of D2 activation that modulates 
+            activation threshold.
+
+            2021-12-05: this could also be set by calculation from
+            a density, given some affinity
+        """
+        self.r_d2 = ratio
+    def set_A1(self, ratio):
+        """Set the percentage of A1 activation that modulates 
+            activation threshold.
+
+            2021-12-05: this could also be set by calculation from
+            a density, given some affinity
+        """
+        self.r_a1 = ratio
+    def set_A2(self, ratio):
+        """Set the percentage of A1 activation that modulates 
+            activation threshold.
+
+            2021-12-05: this could also be set by calculation from
+            a density, given some affinity
+        """
+        self.r_a2 = ratio
+
+    def logistic(self, val):
+        return 1.0/(1+exp(-val))

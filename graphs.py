@@ -93,7 +93,7 @@ def line(xs, ys, std=None, fig=None, title='', width=700, height=400, dots=False
     if fig is None:
         fig = figure(plot_width=width, plot_height=height, tools="save", title=title, **kwargs)
 
-    fig.line(xs, ys, line_color=color, line_alpha=alpha, line_width=line_width, legend=legend, )
+    fig.line(xs, ys, line_color=color, line_alpha=alpha, line_width=line_width, legend_label=legend, )
     if dots:
         fig.scatter(xs, ys, line_color=None, fill_color=color, size=4)
     if std is not None:
@@ -111,9 +111,9 @@ def line(xs, ys, std=None, fig=None, title='', width=700, height=400, dots=False
 def xx1(xs, y_xx1, y_noisy_xx1, title='', width=400, height=400):
     fig = figure(plot_width=width, plot_height=height, tools="")
     fig.title.text = title
-    fig.line(xs, y_xx1, legend='XX1',
+    fig.line(xs, y_xx1, legend_label='XX1',
                           line_alpha=0.5, line_width=2)
-    fig.line(xs, y_noisy_xx1, legend='Noisy XX1',
+    fig.line(xs, y_noisy_xx1, legend_label='Noisy XX1',
              color='red', line_alpha=0.5, line_width=2)
     fig.legend.location = 'center_right'
     bkp.show(fig)
