@@ -87,7 +87,7 @@ def floatslider(*args, **kwargs):
 
     ## Graphs
 
-def line(xs, ys, std=None, fig=None, title='', width=700, height=400, dots=False, legend=None,
+def line(xs, ys, std=None, fig=None, title='', width=700, height=400, dots=False, legend='None',
          color='#00a0b0', alpha=1.0, line_width=1, show=True, **kwargs):
 
     if fig is None:
