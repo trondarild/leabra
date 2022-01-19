@@ -45,7 +45,7 @@ class Unit:
     def reset(self):
         """Reset the Unit state. Called at creation, and at every trial."""
         self.ex_inputs  = []    # excitatory inputs for the next cycle
-
+        self.logs = {name: [] for name in self.log_names}
         self.g_e     = 0                  # excitatory conductance
         self.I_net   = 0                  # net current
         self.I_net_r = self.I_net         # net current, equilibrium version (for v_m_eq)
@@ -71,9 +71,9 @@ class Unit:
 
     def cycle(self, phase, g_i=0.0, dt_integ=1):
         """Cycle the unit"""
-        #return self.spec.cycle(self, phase, g_i=g_i, dt_integ=dt_integ)
+        return self.spec.cycle(self, phase, g_i=g_i, dt_integ=dt_integ)
         # 2021-12-05 change to use dopa, adeno
-        return self.spec.cycle_da(self, phase, g_i=g_i, dt_integ=dt_integ)
+        #return self.spec.cycle_da(self, phase, g_i=g_i, dt_integ=dt_integ)
 
     def calculate_net_in(self):
         return self.spec.calculate_net_in(self)
@@ -347,7 +347,7 @@ class UnitSpec:
             gc_l = self.g_bar_l * self.g_l
             g_e_thr = (  gc_i * (self.e_rev_i - self.act_thr)
                        + gc_l * (self.e_rev_l - self.act_thr)
-                       - unit.adapt) / (self.act_thr - self.e_rev_e)
+                       - unit.adapt + self.bias) / (self.act_thr - self.e_rev_e)
 
             new_act = act_fun(gc_e - g_e_thr)  # gc_e == unit.net
             #print('ABVTHR {} net={} {}\n       new_act={}'.format(unit.v_m_eq, gc_e, g_e_thr, new_act))
@@ -460,7 +460,8 @@ class UnitSpec:
             I_net = (  gc_e * (self.e_rev_e - v_m_eff)
                      + gc_i * (self.e_rev_i - v_m_eff)
                      + gc_l * (self.e_rev_l - v_m_eff)
-                     - unit.adapt)
+                     - unit.adapt
+                      + self.bias)
             v_m_eff += dt_integ/steps * self.dt_v_m * I_net
 
         return I_net
