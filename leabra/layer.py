@@ -58,13 +58,13 @@ class Layer:
 
     def force_activity(self, activities):
         """Set the units's activities equal to the inputs."""
-        assert len(activities) == len(self.units)
+        assert len(activities) == len(self.units), str(len(activities)) + " != " + str(len(self.units))
         for u, act in zip(self.units, activities):
             u.force_activity(act)
 
     def add_excitatory(self, inputs):
         """Add excitatory inputs to the layer's units."""
-        assert len(inputs) == len(self.units)
+        assert len(inputs) == len(self.units), str(len(inputs)) + " != " + str(len(self.units))
         for u, net_raw in zip(self.units, inputs):
             u.add_excitatory(net_raw)
 
